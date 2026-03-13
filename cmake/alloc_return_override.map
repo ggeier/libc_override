@@ -1,0 +1,16 @@
+ALLOC_RETURN_OVERRIDE_1 {
+    global:
+        asprintf;
+        get_current_dir_name;
+        getcwd;
+        realpath;
+        scandir;
+        scandir64;
+        strdup;
+        strndup;
+        tempnam;
+        vasprintf;
+        wcsdup;
+    local:
+        *;
+};
