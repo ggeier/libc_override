@@ -10,6 +10,8 @@ enable_testing()
 
 find_package(Threads REQUIRED)
 
+option(ALLOC_OVERRIDE_ENABLE_STRICT_NEGATIVE_TESTS "Enable strict mock-only negative tests" OFF)
+
 add_library(alloc_return_override SHARED
     src/dirent_overrides.c
     src/helpers.c
@@ -64,6 +66,8 @@ add_executable(phase1a_smoke tests/phase1a_smoke.c)
 
 add_executable(phase1a_validation tests/phase1a_validation.c)
 
+add_executable(phase1a_mock_only tests/phase1a_mock_only.c)
+
 target_compile_definitions(phase1a_smoke PRIVATE
     _GNU_SOURCE
     _LARGEFILE64_SOURCE
@@ -74,11 +78,22 @@ target_compile_definitions(phase1a_validation PRIVATE
     _LARGEFILE64_SOURCE
 )
 
+target_compile_definitions(phase1a_mock_only PRIVATE
+    _GNU_SOURCE
+    _LARGEFILE64_SOURCE
+)
+
 target_link_libraries(phase1a_smoke PRIVATE dl)
 
 target_link_libraries(phase1a_validation PRIVATE dl)
 
+target_link_libraries(phase1a_mock_only PRIVATE dl)
+
 target_include_directories(phase1a_validation PRIVATE
+    include
+)
+
+target_include_directories(phase1a_mock_only PRIVATE
     include
 )
 
@@ -89,6 +104,12 @@ target_compile_options(phase1a_smoke PRIVATE
 )
 
 target_compile_options(phase1a_validation PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)
+
+target_compile_options(phase1a_mock_only PRIVATE
     -Wall
     -Wextra
     -Wpedantic
@@ -111,3 +132,27 @@ add_test(
         $<TARGET_FILE:phase1a_validation>
         $<TARGET_FILE_NAME:mock_allocator>
 )
+
+add_test(
+    NAME phase1a_mock_only_diagnostic
+    COMMAND
+        ${CMAKE_COMMAND} -E env
+        "LD_PRELOAD=$<TARGET_FILE:mock_allocator>"
+        $<TARGET_FILE:phase1a_mock_only>
+        $<TARGET_FILE_NAME:mock_allocator>
+        "${CMAKE_CURRENT_BINARY_DIR}/phase1a_mock_only_diagnostic.txt"
+        diagnostic
+)
+
+if (ALLOC_OVERRIDE_ENABLE_STRICT_NEGATIVE_TESTS)
+    add_test(
+        NAME phase1a_mock_only_strict_negative
+        COMMAND
+            ${CMAKE_COMMAND} -E env
+            "LD_PRELOAD=$<TARGET_FILE:mock_allocator>"
+            $<TARGET_FILE:phase1a_mock_only>
+            $<TARGET_FILE_NAME:mock_allocator>
+            "${CMAKE_CURRENT_BINARY_DIR}/phase1a_mock_only_strict.txt"
+            strict_negative
+    )
+endif()
