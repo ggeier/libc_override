@@ -1,0 +1,15 @@
+ALLOC_RETURN_OVERRIDE_OHOS_1 {
+    global:
+        asprintf;
+        get_current_dir_name;
+        getcwd;
+        realpath;
+        scandir;
+        strdup;
+        strndup;
+        tempnam;
+        vasprintf;
+        wcsdup;
+    local:
+        *;
+};

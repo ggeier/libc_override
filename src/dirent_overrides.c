@@ -70,6 +70,7 @@ int scandir(const char *path, struct dirent ***res,
     return (int)count;
 }
 
+#ifndef scandir64
 int scandir64(const char *path, struct dirent64 ***res,
     int (*sel)(const struct dirent64 *),
     int (*cmp)(const struct dirent64 **, const struct dirent64 **))
@@ -131,3 +132,4 @@ int scandir64(const char *path, struct dirent64 ***res,
     *res = names;
     return (int)count;
 }
+#endif

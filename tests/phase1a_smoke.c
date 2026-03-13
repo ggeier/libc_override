@@ -1,10 +1,11 @@
 #define _GNU_SOURCE 1
 #define _LARGEFILE64_SOURCE 1
 
+#include "test_support.h"
+
 #include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
-#include <limits.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -51,11 +52,21 @@ static int call_vasprintf(char **out, const char *fmt, ...)
 }
 
 typedef char *(*tempnam_fn_t)(const char *, const char *);
+typedef char *(*get_current_dir_name_fn_t)(void);
 
 static tempnam_fn_t lookup_tempnam(void)
 {
     tempnam_fn_t fn = NULL;
     void *sym = dlsym(RTLD_DEFAULT, "tempnam");
+
+    memcpy(&fn, &sym, sizeof(fn));
+    return fn;
+}
+
+static get_current_dir_name_fn_t lookup_get_current_dir_name(void)
+{
+    get_current_dir_name_fn_t fn = NULL;
+    void *sym = dlsym(RTLD_DEFAULT, "get_current_dir_name");
 
     memcpy(&fn, &sym, sizeof(fn));
     return fn;
@@ -125,13 +136,15 @@ static void test_path_family(void)
     char *resolved;
     char *temp;
     tempnam_fn_t tempnam_fn = lookup_tempnam();
+    get_current_dir_name_fn_t get_current_dir_name_fn = lookup_get_current_dir_name();
 
     check(getcwd(cwd_buf, sizeof(cwd_buf)) == cwd_buf, "getcwd with caller buffer failed");
 
     cwd_alloc = getcwd(NULL, 0);
     check(cwd_alloc && strcmp(cwd_alloc, cwd_buf) == 0, "getcwd(NULL, 0) failed");
 
-    cwd_current = get_current_dir_name();
+    check(get_current_dir_name_fn != NULL, "failed to resolve get_current_dir_name");
+    cwd_current = get_current_dir_name_fn();
     check(cwd_current && strcmp(cwd_current, cwd_buf) == 0, "get_current_dir_name failed");
 
     resolved = realpath(".", NULL);
@@ -153,7 +166,7 @@ static void test_path_family(void)
 
 static void test_scandir_family(void)
 {
-    char template[] = "/tmp/alloc-override-XXXXXX";
+    char template[PATH_MAX];
     char file_a[PATH_MAX];
     char file_b[PATH_MAX];
     struct dirent **entries = NULL;
@@ -162,10 +175,11 @@ static void test_scandir_family(void)
     int count64;
     int i;
 
+    ao_test_make_tmp_template(template, sizeof(template), "alloc-override");
     check(mkdtemp(template) != NULL, "mkdtemp failed");
 
-    snprintf(file_a, sizeof(file_a), "%s/%s", template, "a.txt");
-    snprintf(file_b, sizeof(file_b), "%s/%s", template, "b.txt");
+    ao_test_join_path(file_a, sizeof(file_a), template, "a.txt");
+    ao_test_join_path(file_b, sizeof(file_b), template, "b.txt");
 
     {
         FILE *fp = fopen(file_a, "w");

@@ -2,10 +2,10 @@
 #define _LARGEFILE64_SOURCE 1
 
 #include "../include/mock_allocator_test_api.h"
+#include "test_support.h"
 
 #include <dirent.h>
 #include <dlfcn.h>
-#include <limits.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -20,6 +20,7 @@ typedef void (*ao_mock_capture_fn)(void);
 typedef void (*ao_mock_get_stats_fn)(ao_mock_stats *);
 typedef int (*ao_mock_is_tracked_fn)(const void *);
 typedef char *(*tempnam_fn_t)(const char *, const char *);
+typedef char *(*get_current_dir_name_fn_t)(void);
 
 typedef struct mock_api {
     ao_mock_reset_fn reset;
@@ -59,6 +60,15 @@ static tempnam_fn_t lookup_tempnam(void)
 {
     tempnam_fn_t fn = NULL;
     void *symbol = lookup_symbol("tempnam");
+
+    memcpy(&fn, &symbol, sizeof(fn));
+    return fn;
+}
+
+static get_current_dir_name_fn_t lookup_get_current_dir_name(void)
+{
+    get_current_dir_name_fn_t fn = NULL;
+    void *symbol = lookup_symbol("get_current_dir_name");
 
     memcpy(&fn, &symbol, sizeof(fn));
     return fn;
@@ -296,11 +306,12 @@ static void test_get_current_dir_name(mock_api *api)
     ao_mock_stats after_alloc;
     ao_mock_stats after_free;
     char *cwd;
+    get_current_dir_name_fn_t get_current_dir_name_fn = lookup_get_current_dir_name();
 
     check(getcwd(cwd_buffer, sizeof(cwd_buffer)) == cwd_buffer, "baseline getcwd failed");
 
     api->begin_capture();
-    cwd = get_current_dir_name();
+    cwd = get_current_dir_name_fn();
     api->end_capture();
     after_alloc = snapshot(api);
 
@@ -404,7 +415,7 @@ static void create_empty_file(const char *path)
 
 static void test_scandir(mock_api *api)
 {
-    char template[] = "/tmp/alloc-override-validate-XXXXXX";
+    char template[PATH_MAX];
     char file_a[PATH_MAX];
     char file_b[PATH_MAX];
     const ao_mock_stats before = snapshot(api);
@@ -414,9 +425,10 @@ static void test_scandir(mock_api *api)
     int count;
     int i;
 
+    ao_test_make_tmp_template(template, sizeof(template), "alloc-override-validate");
     check(mkdtemp(template) != NULL, "mkdtemp failed");
-    snprintf(file_a, sizeof(file_a), "%s/a.txt", template);
-    snprintf(file_b, sizeof(file_b), "%s/b.txt", template);
+    ao_test_join_path(file_a, sizeof(file_a), template, "a.txt");
+    ao_test_join_path(file_b, sizeof(file_b), template, "b.txt");
     create_empty_file(file_a);
     create_empty_file(file_b);
 
@@ -451,7 +463,7 @@ static void test_scandir(mock_api *api)
 
 static void test_scandir64(mock_api *api)
 {
-    char template[] = "/tmp/alloc-override-validate64-XXXXXX";
+    char template[PATH_MAX];
     char file_a[PATH_MAX];
     char file_b[PATH_MAX];
     const ao_mock_stats before = snapshot(api);
@@ -461,9 +473,10 @@ static void test_scandir64(mock_api *api)
     int count;
     int i;
 
+    ao_test_make_tmp_template(template, sizeof(template), "alloc-override-validate64");
     check(mkdtemp(template) != NULL, "mkdtemp failed");
-    snprintf(file_a, sizeof(file_a), "%s/a.txt", template);
-    snprintf(file_b, sizeof(file_b), "%s/b.txt", template);
+    ao_test_join_path(file_a, sizeof(file_a), template, "a.txt");
+    ao_test_join_path(file_b, sizeof(file_b), template, "b.txt");
     create_empty_file(file_a);
     create_empty_file(file_b);
 

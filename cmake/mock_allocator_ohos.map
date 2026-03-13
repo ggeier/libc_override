@@ -1,0 +1,14 @@
+MOCK_ALLOCATOR_OHOS_1 {
+    global:
+        malloc;
+        calloc;
+        realloc;
+        free;
+        ao_mock_reset;
+        ao_mock_begin_capture;
+        ao_mock_end_capture;
+        ao_mock_get_stats;
+        ao_mock_is_tracked_allocation;
+    local:
+        *;
+};
