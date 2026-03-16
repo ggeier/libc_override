@@ -353,6 +353,93 @@ static void test_getline(mock_api *api)
     fclose(file);
 }
 
+static void test_open_memstream(mock_api *api)
+{
+    static const char payload[] = "allocator override buffer";
+    const ao_mock_stats before = snapshot(api);
+    ao_mock_stats after_open;
+    ao_mock_stats after_close;
+    ao_mock_stats after_free;
+    FILE *stream;
+    char *buffer = NULL;
+    size_t size = 999;
+
+    api->begin_capture();
+    stream = open_memstream(&buffer, &size);
+    check(stream != NULL, "open_memstream returned null");
+    check(fwrite(payload, 1, strlen(payload), stream) == strlen(payload), "open_memstream fwrite failed");
+    check(fflush(stream) == 0, "open_memstream fflush failed");
+    api->end_capture();
+    after_open = snapshot(api);
+
+    check(buffer != NULL, "open_memstream did not publish buffer");
+    check(strcmp(buffer, payload) == 0, "open_memstream content mismatch after flush");
+    check(size == strlen(payload), "open_memstream size mismatch after flush");
+    check(api->is_tracked(buffer), "open_memstream published buffer was not tracked by mock allocator");
+    check(alloc_call_count(&after_open) > alloc_call_count(&before), "open_memstream did not trigger allocation calls");
+
+    api->begin_capture();
+    check(fclose(stream) == 0, "open_memstream fclose failed");
+    api->end_capture();
+    after_close = snapshot(api);
+
+    check(strcmp(buffer, payload) == 0, "open_memstream content mismatch after close");
+    check(api->is_tracked(buffer), "open_memstream buffer lost tracking after close");
+    check(after_close.live_blocks >= before.live_blocks + 1, "open_memstream close lost published buffer");
+
+    api->begin_capture();
+    free(buffer);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_close.free_calls + 1, "open_memstream published buffer free was not recorded");
+    check(after_free.live_blocks == before.live_blocks, "open_memstream live block count mismatch after free");
+}
+
+static void test_open_wmemstream(mock_api *api)
+{
+    static const wchar_t payload[] = L"allocator wide buffer";
+    const ao_mock_stats before = snapshot(api);
+    ao_mock_stats after_open;
+    ao_mock_stats after_close;
+    ao_mock_stats after_free;
+    FILE *stream;
+    wchar_t *buffer = NULL;
+    size_t size = 999;
+
+    api->begin_capture();
+    stream = open_wmemstream(&buffer, &size);
+    check(stream != NULL, "open_wmemstream returned null");
+    check(fwide(stream, 0) > 0, "open_wmemstream is not wide-oriented");
+    check(fputws(payload, stream) >= 0, "open_wmemstream fputws failed");
+    check(fflush(stream) == 0, "open_wmemstream fflush failed");
+    api->end_capture();
+    after_open = snapshot(api);
+
+    check(buffer != NULL, "open_wmemstream did not publish buffer");
+    check(wcscmp(buffer, payload) == 0, "open_wmemstream content mismatch after flush");
+    check(size == wcslen(payload), "open_wmemstream size mismatch after flush");
+    check(api->is_tracked(buffer), "open_wmemstream published buffer was not tracked by mock allocator");
+    check(alloc_call_count(&after_open) > alloc_call_count(&before), "open_wmemstream did not trigger allocation calls");
+
+    api->begin_capture();
+    check(fclose(stream) == 0, "open_wmemstream fclose failed");
+    api->end_capture();
+    after_close = snapshot(api);
+
+    check(wcscmp(buffer, payload) == 0, "open_wmemstream content mismatch after close");
+    check(api->is_tracked(buffer), "open_wmemstream buffer lost tracking after close");
+    check(after_close.live_blocks >= before.live_blocks + 1, "open_wmemstream close lost published buffer");
+
+    api->begin_capture();
+    free(buffer);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_close.free_calls + 1, "open_wmemstream published buffer free was not recorded");
+    check(after_free.live_blocks == before.live_blocks, "open_wmemstream live block count mismatch after free");
+}
+
 static void test_getcwd_allocates_only_when_needed(mock_api *api)
 {
     char buffer[PATH_MAX];
@@ -615,6 +702,8 @@ int main(int argc, char **argv)
     test_vasprintf(&api);
     test_getdelim(&api);
     test_getline(&api);
+    test_open_memstream(&api);
+    test_open_wmemstream(&api);
     test_getcwd_allocates_only_when_needed(&api);
     test_get_current_dir_name(&api);
     test_realpath(&api);

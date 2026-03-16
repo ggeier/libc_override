@@ -164,6 +164,10 @@ static void validate_strict_negative(const case_result *result)
         return;
     }
 
+    if (strcmp(result->name, "open_memstream") == 0 || strcmp(result->name, "open_wmemstream") == 0) {
+        return;
+    }
+
     if (result->created_objects == 0) {
         check(result->tracked_objects == 0, "non-allocating case unexpectedly reported tracked objects");
         return;
@@ -433,6 +437,93 @@ static case_result run_getline_case(mock_api *api)
 
     fill_result(&result, "getline", &before, &after_alloc, &after_free, 1, tracked);
     fclose(file);
+    return result;
+}
+
+static case_result run_open_memstream_case(mock_api *api)
+{
+    static const char payload[] = "allocator override buffer";
+    ao_mock_stats before;
+    ao_mock_stats after_open;
+    ao_mock_stats after_close;
+    ao_mock_stats after_free;
+    case_result result;
+    FILE *stream;
+    char *buffer = NULL;
+    size_t size = 0;
+    uint64_t tracked;
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    stream = open_memstream(&buffer, &size);
+    check(stream != NULL, "open_memstream returned null");
+    check(fwrite(payload, 1, strlen(payload), stream) == strlen(payload), "open_memstream fwrite failed");
+    check(fflush(stream) == 0, "open_memstream fflush failed");
+    api->end_capture();
+    after_open = snapshot(api);
+
+    check(buffer != NULL, "open_memstream did not publish buffer");
+    check(strcmp(buffer, payload) == 0, "open_memstream content mismatch");
+    tracked = api->is_tracked(buffer) ? 1u : 0u;
+
+    api->begin_capture();
+    check(fclose(stream) == 0, "open_memstream fclose failed");
+    api->end_capture();
+    after_close = snapshot(api);
+
+    api->begin_capture();
+    free(buffer);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "open_memstream", &before, &after_open, &after_free, 1, tracked);
+    result.cleanup_free_calls = after_free.free_calls - after_close.free_calls;
+    result.cleanup_bypass_free_calls = after_free.bypass_free_calls - after_close.bypass_free_calls;
+    return result;
+}
+
+static case_result run_open_wmemstream_case(mock_api *api)
+{
+    static const wchar_t payload[] = L"allocator wide buffer";
+    ao_mock_stats before;
+    ao_mock_stats after_open;
+    ao_mock_stats after_close;
+    ao_mock_stats after_free;
+    case_result result;
+    FILE *stream;
+    wchar_t *buffer = NULL;
+    size_t size = 0;
+    uint64_t tracked;
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    stream = open_wmemstream(&buffer, &size);
+    check(stream != NULL, "open_wmemstream returned null");
+    check(fwide(stream, 0) > 0, "open_wmemstream is not wide-oriented");
+    check(fputws(payload, stream) >= 0, "open_wmemstream fputws failed");
+    check(fflush(stream) == 0, "open_wmemstream fflush failed");
+    api->end_capture();
+    after_open = snapshot(api);
+
+    check(buffer != NULL, "open_wmemstream did not publish buffer");
+    check(wcscmp(buffer, payload) == 0, "open_wmemstream content mismatch");
+    tracked = api->is_tracked(buffer) ? 1u : 0u;
+
+    api->begin_capture();
+    check(fclose(stream) == 0, "open_wmemstream fclose failed");
+    api->end_capture();
+    after_close = snapshot(api);
+
+    api->begin_capture();
+    free(buffer);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "open_wmemstream", &before, &after_open, &after_free, 1, tracked);
+    result.cleanup_free_calls = after_free.free_calls - after_close.free_calls;
+    result.cleanup_bypass_free_calls = after_free.bypass_free_calls - after_close.bypass_free_calls;
     return result;
 }
 
@@ -720,7 +811,7 @@ int main(int argc, char **argv)
     mock_api api;
     run_mode mode = RUN_MODE_DIAGNOSTIC;
     FILE *report;
-    case_result results[13];
+    case_result results[15];
     size_t i;
 
     check(argc == 4, "usage: phase1a_mock_only <mock_allocator_basename> <report_path> <diagnostic|strict_negative>");
@@ -741,12 +832,14 @@ int main(int argc, char **argv)
     results[4] = run_vasprintf_case(&api);
     results[5] = run_getdelim_case(&api);
     results[6] = run_getline_case(&api);
-    results[7] = run_getcwd_buffer_case(&api);
-    results[8] = run_getcwd_alloc_case(&api);
-    results[9] = run_get_current_dir_name_case(&api);
-    results[10] = run_realpath_buffer_case(&api);
-    results[11] = run_realpath_alloc_case(&api);
-    results[12] = run_tempnam_case(&api);
+    results[7] = run_open_memstream_case(&api);
+    results[8] = run_open_wmemstream_case(&api);
+    results[9] = run_getcwd_buffer_case(&api);
+    results[10] = run_getcwd_alloc_case(&api);
+    results[11] = run_get_current_dir_name_case(&api);
+    results[12] = run_realpath_buffer_case(&api);
+    results[13] = run_realpath_alloc_case(&api);
+    results[14] = run_tempnam_case(&api);
 
     report = fopen(argv[2], "w");
     check(report != NULL, "failed to open diagnostic report file");

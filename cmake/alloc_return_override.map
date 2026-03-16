@@ -6,6 +6,8 @@ ALLOC_RETURN_OVERRIDE_1 {
         getcwd;
         getdelim;
         getline;
+        open_memstream;
+        open_wmemstream;
         realpath;
         scandir;
         scandir64;

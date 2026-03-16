@@ -134,6 +134,18 @@ static void check_preload(const char *library_name)
     check(dladdr(sym, &info) != 0, "dladdr(__getdelim) failed");
     check(info.dli_fname != NULL, "dladdr for __getdelim returned null path");
     check(strstr(info.dli_fname, library_name) != NULL, "__getdelim did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "open_memstream");
+    check(sym != NULL, "dlsym(open_memstream) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(open_memstream) failed");
+    check(info.dli_fname != NULL, "dladdr for open_memstream returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "open_memstream did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "open_wmemstream");
+    check(sym != NULL, "dlsym(open_wmemstream) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(open_wmemstream) failed");
+    check(info.dli_fname != NULL, "dladdr for open_wmemstream returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "open_wmemstream did not resolve to preload library");
 }
 
 static void test_strdup_family(void)
@@ -206,6 +218,93 @@ static void test_line_reader_family(void)
     check(strcmp(line, getline_expected) == 0, "getline content mismatch");
     fclose(file);
     free(line);
+}
+
+static void test_open_memstream(void)
+{
+    FILE *stream;
+    char *buffer = NULL;
+    size_t size = 0;
+    int ret;
+
+    stream = open_memstream(&buffer, &size);
+    check(stream != NULL, "open_memstream failed");
+    check(putc('a', stream) == 'a', "open_memstream putc a failed");
+    check(putc('b', stream) == 'b', "open_memstream putc b failed");
+    check(putc('c', stream) == 'c', "open_memstream putc c failed");
+    check(fflush(stream) == 0, "open_memstream fflush failed");
+    check(size == 3, "open_memstream size after abc mismatch");
+    check(buffer != NULL && strcmp(buffer, "abc") == 0, "open_memstream abc content mismatch");
+    check(fclose(stream) == 0, "open_memstream fclose failed");
+    free(buffer);
+
+    buffer = NULL;
+    size = 0;
+    stream = open_memstream(&buffer, &size);
+    check(stream != NULL, "open_memstream second open failed");
+    check(fseek(stream, 1, SEEK_CUR) == 0, "open_memstream forward seek failed");
+    check(putc('q', stream) == 'q', "open_memstream putc q failed");
+    check(fflush(stream) == 0, "open_memstream second fflush failed");
+    check(buffer != NULL, "open_memstream did not publish buffer");
+    check(memcmp(buffer, "\0q", 3) == 0, "open_memstream sparse write mismatch");
+
+    errno = 0;
+    ret = fseek(stream, -3, SEEK_CUR);
+    check(ret == -1, "open_memstream invalid seek unexpectedly succeeded");
+    check(errno == EINVAL, "open_memstream invalid seek errno mismatch");
+    check(ftell(stream) == 2, "open_memstream ftell after invalid seek mismatch");
+
+    check(fseek(stream, -2, SEEK_CUR) == 0, "open_memstream rewind seek failed");
+    check(putc('e', stream) == 'e', "open_memstream overwrite failed");
+    check(fflush(stream) == 0, "open_memstream overwrite fflush failed");
+    check(strcmp(buffer, "eq") == 0, "open_memstream overwrite content mismatch");
+    check(fclose(stream) == 0, "open_memstream second fclose failed");
+    free(buffer);
+}
+
+static void test_open_wmemstream(void)
+{
+    static const wchar_t abc_expected[] = L"abc";
+    static const wchar_t eq_expected[] = L"eq";
+    static const wchar_t sparse_expected[] = {L'\0', L'q', L'\0'};
+    FILE *stream;
+    wchar_t *buffer = NULL;
+    size_t size = 0;
+    int ret;
+
+    stream = open_wmemstream(&buffer, &size);
+    check(stream != NULL, "open_wmemstream failed");
+    check(fwide(stream, 0) > 0, "open_wmemstream is not wide-oriented");
+    check(fputwc(L'a', stream) == L'a', "open_wmemstream putwc a failed");
+    check(fputws(L"bc", stream) >= 0, "open_wmemstream fputws failed");
+    check(fflush(stream) == 0, "open_wmemstream fflush failed");
+    check(size == 3, "open_wmemstream size after abc mismatch");
+    check(buffer != NULL && wcscmp(buffer, abc_expected) == 0, "open_wmemstream abc content mismatch");
+    check(fclose(stream) == 0, "open_wmemstream fclose failed");
+    free(buffer);
+
+    buffer = NULL;
+    size = 0;
+    stream = open_wmemstream(&buffer, &size);
+    check(stream != NULL, "open_wmemstream second open failed");
+    check(fseek(stream, 1, SEEK_CUR) == 0, "open_wmemstream forward seek failed");
+    check(fputwc(L'q', stream) == L'q', "open_wmemstream putwc q failed");
+    check(fflush(stream) == 0, "open_wmemstream second fflush failed");
+    check(buffer != NULL, "open_wmemstream did not publish buffer");
+    check(wmemcmp(buffer, sparse_expected, 3) == 0, "open_wmemstream sparse write mismatch");
+
+    errno = 0;
+    ret = fseek(stream, -3, SEEK_CUR);
+    check(ret == -1, "open_wmemstream invalid seek unexpectedly succeeded");
+    check(errno == EINVAL, "open_wmemstream invalid seek errno mismatch");
+    check(ftell(stream) == 2, "open_wmemstream ftell after invalid seek mismatch");
+
+    check(fseek(stream, -2, SEEK_CUR) == 0, "open_wmemstream rewind seek failed");
+    check(fputwc(L'e', stream) == L'e', "open_wmemstream overwrite failed");
+    check(fflush(stream) == 0, "open_wmemstream overwrite fflush failed");
+    check(wcscmp(buffer, eq_expected) == 0, "open_wmemstream overwrite content mismatch");
+    check(fclose(stream) == 0, "open_wmemstream second fclose failed");
+    free(buffer);
 }
 
 static void test_path_family(void)
@@ -300,6 +399,8 @@ int main(int argc, char **argv)
     test_strdup_family();
     test_printf_family();
     test_line_reader_family();
+    test_open_memstream();
+    test_open_wmemstream();
     test_path_family();
     test_scandir_family();
 
