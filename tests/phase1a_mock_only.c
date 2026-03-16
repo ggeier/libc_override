@@ -182,6 +182,19 @@ static void create_empty_file(const char *path)
     fclose(file);
 }
 
+static FILE *open_line_reader_stream(const char *contents, char *buffer, size_t buffer_size)
+{
+    FILE *file = tmpfile();
+    size_t length = strlen(contents);
+
+    check(file != NULL, "tmpfile failed");
+    check(setvbuf(file, buffer, _IOFBF, buffer_size) == 0, "setvbuf failed");
+    check(fwrite(contents, 1, length, file) == length, "failed to write line reader input");
+    check(fflush(file) == 0, "fflush failed");
+    rewind(file);
+    return file;
+}
+
 static int call_vasprintf(char **out, const char *fmt, ...)
 {
     va_list ap;
@@ -347,6 +360,79 @@ static case_result run_vasprintf_case(mock_api *api)
     after_free = snapshot(api);
 
     fill_result(&result, "vasprintf", &before, &after_alloc, &after_free, 1, tracked);
+    return result;
+}
+
+static case_result run_getdelim_case(mock_api *api)
+{
+    static const char input[] = "hello,world";
+    static const char expected[] = "hello,";
+    char file_buffer[64];
+    FILE *file = open_line_reader_stream(input, file_buffer, sizeof(file_buffer));
+    ao_mock_stats before;
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    case_result result;
+    char *line = NULL;
+    size_t capacity = 0;
+    ssize_t length;
+    uint64_t tracked;
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    length = getdelim(&line, &capacity, ',', file);
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(length == (ssize_t)strlen(expected), "getdelim length mismatch");
+    check(line != NULL, "getdelim returned null");
+    check(strcmp(line, expected) == 0, "getdelim content mismatch");
+    tracked = api->is_tracked(line) ? 1u : 0u;
+
+    api->begin_capture();
+    free(line);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "getdelim", &before, &after_alloc, &after_free, 1, tracked);
+    fclose(file);
+    return result;
+}
+
+static case_result run_getline_case(mock_api *api)
+{
+    static const char expected[] = "allocator growth line\n";
+    char file_buffer[128];
+    FILE *file = open_line_reader_stream(expected, file_buffer, sizeof(file_buffer));
+    ao_mock_stats before;
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    case_result result;
+    char *line = NULL;
+    size_t capacity = 0;
+    ssize_t length;
+    uint64_t tracked;
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    length = getline(&line, &capacity, file);
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(length == (ssize_t)strlen(expected), "getline length mismatch");
+    check(line != NULL, "getline returned null");
+    check(strcmp(line, expected) == 0, "getline content mismatch");
+    tracked = api->is_tracked(line) ? 1u : 0u;
+
+    api->begin_capture();
+    free(line);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "getline", &before, &after_alloc, &after_free, 1, tracked);
+    fclose(file);
     return result;
 }
 
@@ -634,7 +720,7 @@ int main(int argc, char **argv)
     mock_api api;
     run_mode mode = RUN_MODE_DIAGNOSTIC;
     FILE *report;
-    case_result results[11];
+    case_result results[13];
     size_t i;
 
     check(argc == 4, "usage: phase1a_mock_only <mock_allocator_basename> <report_path> <diagnostic|strict_negative>");
@@ -653,12 +739,14 @@ int main(int argc, char **argv)
     results[2] = run_wcsdup_case(&api);
     results[3] = run_asprintf_case(&api);
     results[4] = run_vasprintf_case(&api);
-    results[5] = run_getcwd_buffer_case(&api);
-    results[6] = run_getcwd_alloc_case(&api);
-    results[7] = run_get_current_dir_name_case(&api);
-    results[8] = run_realpath_buffer_case(&api);
-    results[9] = run_realpath_alloc_case(&api);
-    results[10] = run_tempnam_case(&api);
+    results[5] = run_getdelim_case(&api);
+    results[6] = run_getline_case(&api);
+    results[7] = run_getcwd_buffer_case(&api);
+    results[8] = run_getcwd_alloc_case(&api);
+    results[9] = run_get_current_dir_name_case(&api);
+    results[10] = run_realpath_buffer_case(&api);
+    results[11] = run_realpath_alloc_case(&api);
+    results[12] = run_tempnam_case(&api);
 
     report = fopen(argv[2], "w");
     check(report != NULL, "failed to open diagnostic report file");

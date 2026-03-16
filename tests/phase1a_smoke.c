@@ -53,6 +53,7 @@ static int call_vasprintf(char **out, const char *fmt, ...)
 
 typedef char *(*tempnam_fn_t)(const char *, const char *);
 typedef char *(*get_current_dir_name_fn_t)(void);
+typedef ssize_t (*getdelim_fn_t)(char **restrict, size_t *restrict, int, FILE *restrict);
 
 static tempnam_fn_t lookup_tempnam(void)
 {
@@ -70,6 +71,27 @@ static get_current_dir_name_fn_t lookup_get_current_dir_name(void)
 
     memcpy(&fn, &sym, sizeof(fn));
     return fn;
+}
+
+static getdelim_fn_t lookup_internal_getdelim(void)
+{
+    getdelim_fn_t fn = NULL;
+    void *sym = dlsym(RTLD_DEFAULT, "__getdelim");
+
+    memcpy(&fn, &sym, sizeof(fn));
+    return fn;
+}
+
+static FILE *open_input_stream(const char *contents)
+{
+    FILE *file = tmpfile();
+    size_t length = strlen(contents);
+
+    check(file != NULL, "tmpfile failed");
+    check(fwrite(contents, 1, length, file) == length, "failed to write input stream");
+    check(fflush(file) == 0, "fflush failed");
+    rewind(file);
+    return file;
 }
 
 static void check_preload(const char *library_name)
@@ -94,6 +116,24 @@ static void check_preload(const char *library_name)
     check(dladdr(sym, &info) != 0, "dladdr(tempnam) failed");
     check(info.dli_fname != NULL, "dladdr for tempnam returned null path");
     check(strstr(info.dli_fname, library_name) != NULL, "tempnam did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "getdelim");
+    check(sym != NULL, "dlsym(getdelim) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(getdelim) failed");
+    check(info.dli_fname != NULL, "dladdr for getdelim returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "getdelim did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "getline");
+    check(sym != NULL, "dlsym(getline) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(getline) failed");
+    check(info.dli_fname != NULL, "dladdr for getline returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "getline did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "__getdelim");
+    check(sym != NULL, "dlsym(__getdelim) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(__getdelim) failed");
+    check(info.dli_fname != NULL, "dladdr for __getdelim returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "__getdelim did not resolve to preload library");
 }
 
 static void test_strdup_family(void)
@@ -125,6 +165,47 @@ static void test_printf_family(void)
 
     free(msg);
     free(vmsg);
+}
+
+static void test_line_reader_family(void)
+{
+    static const char getdelim_input[] = "alpha,beta";
+    static const char getdelim_expected[] = "alpha,";
+    static const char getline_expected[] = "growth line\n";
+    getdelim_fn_t internal_getdelim = lookup_internal_getdelim();
+    FILE *file;
+    char *line = NULL;
+    size_t capacity = 0;
+    ssize_t length;
+
+    check(internal_getdelim != NULL, "failed to resolve __getdelim");
+
+    file = open_input_stream(getdelim_input);
+    length = getdelim(&line, &capacity, ',', file);
+    check(length == (ssize_t)strlen(getdelim_expected), "getdelim length mismatch");
+    check(line != NULL && strcmp(line, getdelim_expected) == 0, "getdelim content mismatch");
+    fclose(file);
+    free(line);
+
+    file = open_input_stream(getline_expected);
+    line = malloc(2);
+    capacity = 2;
+    check(line != NULL, "initial getline buffer allocation failed");
+    length = internal_getdelim(&line, &capacity, '\n', file);
+    check(length == (ssize_t)strlen(getline_expected), "__getdelim length mismatch");
+    check(strcmp(line, getline_expected) == 0, "__getdelim content mismatch");
+    fclose(file);
+    free(line);
+
+    file = open_input_stream(getline_expected);
+    line = malloc(2);
+    capacity = 2;
+    check(line != NULL, "initial getline buffer allocation failed");
+    length = getline(&line, &capacity, file);
+    check(length == (ssize_t)strlen(getline_expected), "getline length mismatch");
+    check(strcmp(line, getline_expected) == 0, "getline content mismatch");
+    fclose(file);
+    free(line);
 }
 
 static void test_path_family(void)
@@ -218,6 +299,7 @@ int main(int argc, char **argv)
     check_preload(argv[1]);
     test_strdup_family();
     test_printf_family();
+    test_line_reader_family();
     test_path_family();
     test_scandir_family();
 

@@ -74,6 +74,19 @@ static get_current_dir_name_fn_t lookup_get_current_dir_name(void)
     return fn;
 }
 
+static FILE *open_line_reader_stream(const char *contents, char *buffer, size_t buffer_size)
+{
+    FILE *file = tmpfile();
+    size_t length = strlen(contents);
+
+    check(file != NULL, "tmpfile failed");
+    check(setvbuf(file, buffer, _IOFBF, buffer_size) == 0, "setvbuf failed");
+    check(fwrite(contents, 1, length, file) == length, "failed to write line reader input");
+    check(fflush(file) == 0, "fflush failed");
+    rewind(file);
+    return file;
+}
+
 static mock_api load_mock_api(void)
 {
     mock_api api = {0};
@@ -262,6 +275,82 @@ static void test_vasprintf(mock_api *api)
 
     check(after_free.free_calls == after_alloc.free_calls + 1, "vasprintf free was not recorded");
     check(after_free.live_blocks == before.live_blocks, "vasprintf live block count mismatch after free");
+}
+
+static void test_getdelim(mock_api *api)
+{
+    static const char input[] = "hello,world";
+    static const char expected[] = "hello,";
+    char file_buffer[64];
+    FILE *file = open_line_reader_stream(input, file_buffer, sizeof(file_buffer));
+    const ao_mock_stats before = snapshot(api);
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    char *line = NULL;
+    size_t capacity = 0;
+    ssize_t length;
+
+    api->begin_capture();
+    length = getdelim(&line, &capacity, ',', file);
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(length == (ssize_t)strlen(expected), "getdelim length mismatch");
+    check(line != NULL, "getdelim returned null");
+    check(strcmp(line, expected) == 0, "getdelim content mismatch");
+    check(capacity > strlen(expected), "getdelim capacity did not grow");
+    check(api->is_tracked(line), "getdelim result was not tracked by mock allocator");
+    check(alloc_call_count(&after_alloc) > alloc_call_count(&before), "getdelim did not trigger any allocation calls");
+    check(after_alloc.live_blocks == before.live_blocks + 1, "getdelim live block count mismatch after allocation");
+
+    api->begin_capture();
+    free(line);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_alloc.free_calls + 1, "getdelim free was not recorded");
+    check(after_free.live_blocks == before.live_blocks, "getdelim live block count mismatch after free");
+
+    fclose(file);
+}
+
+static void test_getline(mock_api *api)
+{
+    static const char expected[] = "allocator growth line\n";
+    char file_buffer[128];
+    FILE *file = open_line_reader_stream(expected, file_buffer, sizeof(file_buffer));
+    ao_mock_stats before;
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    char *line = malloc(2);
+    size_t capacity = 2;
+    ssize_t length;
+
+    check(line != NULL, "initial getline buffer allocation failed");
+    check(api->is_tracked(line), "initial getline buffer was not tracked by mock allocator");
+    before = snapshot(api);
+
+    api->begin_capture();
+    length = getline(&line, &capacity, file);
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(length == (ssize_t)strlen(expected), "getline length mismatch");
+    check(strcmp(line, expected) == 0, "getline content mismatch");
+    check(capacity > 2, "getline buffer did not grow");
+    check(api->is_tracked(line), "getline result was not tracked by mock allocator");
+    check(alloc_call_count(&after_alloc) > alloc_call_count(&before), "getline did not trigger any allocation calls");
+    check(after_alloc.live_blocks == before.live_blocks, "getline realloc changed live block count");
+
+    api->begin_capture();
+    free(line);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_alloc.free_calls + 1, "getline free was not recorded");
+    check(after_free.live_blocks + 1 == before.live_blocks, "getline live block count mismatch after free");
+
+    fclose(file);
 }
 
 static void test_getcwd_allocates_only_when_needed(mock_api *api)
@@ -524,6 +613,8 @@ int main(int argc, char **argv)
     test_wcsdup(&api);
     test_asprintf(&api);
     test_vasprintf(&api);
+    test_getdelim(&api);
+    test_getline(&api);
     test_getcwd_allocates_only_when_needed(&api);
     test_get_current_dir_name(&api);
     test_realpath(&api);
