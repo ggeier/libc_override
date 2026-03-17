@@ -8,6 +8,7 @@ Current coverage includes:
 - `getdelim`, `__getdelim`, `getline`
 - `open_memstream`, `open_wmemstream`
 - `scanf` `%m` allocation paths across narrow and wide entry points, including `__isoc99_*` aliases
+- `__sched_cpualloc`
 - `getcwd(NULL, 0)`, `get_current_dir_name`, `realpath(path, NULL)`, `tempnam`
 - `scandir` and, on libcs that expose it separately, `scandir64`
 

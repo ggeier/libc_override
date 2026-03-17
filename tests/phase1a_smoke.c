@@ -58,6 +58,7 @@ typedef int (*sscanf_fn_t)(const char *restrict, const char *restrict, ...);
 typedef int (*swscanf_fn_t)(const wchar_t *restrict, const wchar_t *restrict, ...);
 typedef int (*vsscanf_fn_t)(const char *restrict, const char *restrict, va_list);
 typedef int (*vswscanf_fn_t)(const wchar_t *restrict, const wchar_t *restrict, va_list);
+typedef void *(*sched_cpualloc_fn_t)(size_t);
 
 static tempnam_fn_t lookup_tempnam(void)
 {
@@ -81,6 +82,15 @@ static getdelim_fn_t lookup_internal_getdelim(void)
 {
     getdelim_fn_t fn = NULL;
     void *sym = dlsym(RTLD_DEFAULT, "__getdelim");
+
+    memcpy(&fn, &sym, sizeof(fn));
+    return fn;
+}
+
+static sched_cpualloc_fn_t lookup_sched_cpualloc(void)
+{
+    sched_cpualloc_fn_t fn = NULL;
+    void *sym = dlsym(RTLD_DEFAULT, "__sched_cpualloc");
 
     memcpy(&fn, &sym, sizeof(fn));
     return fn;
@@ -220,6 +230,12 @@ static void check_preload(const char *library_name)
     check(dladdr(sym, &info) != 0, "dladdr(__isoc99_vswscanf) failed");
     check(info.dli_fname != NULL, "dladdr for __isoc99_vswscanf returned null path");
     check(strstr(info.dli_fname, library_name) != NULL, "__isoc99_vswscanf did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "__sched_cpualloc");
+    check(sym != NULL, "dlsym(__sched_cpualloc) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(__sched_cpualloc) failed");
+    check(info.dli_fname != NULL, "dladdr for __sched_cpualloc returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "__sched_cpualloc did not resolve to preload library");
 }
 
 static void test_strdup_family(void)
@@ -423,6 +439,17 @@ static void test_scanf_m_family(void)
     free(wide_vresult);
 }
 
+static void test_sched_cpualloc(void)
+{
+    sched_cpualloc_fn_t sched_cpualloc_fn = lookup_sched_cpualloc();
+    void *set;
+
+    check(sched_cpualloc_fn != NULL, "failed to resolve __sched_cpualloc");
+    set = sched_cpualloc_fn(130);
+    check(set != NULL, "__sched_cpualloc returned null");
+    free(set);
+}
+
 static void test_path_family(void)
 {
     char cwd_buf[PATH_MAX];
@@ -518,6 +545,7 @@ int main(int argc, char **argv)
     test_open_memstream();
     test_open_wmemstream();
     test_scanf_m_family();
+    test_sched_cpualloc();
     test_path_family();
     test_scandir_family();
 

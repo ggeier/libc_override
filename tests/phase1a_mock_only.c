@@ -21,6 +21,7 @@ typedef void (*ao_mock_get_stats_fn)(ao_mock_stats *);
 typedef int (*ao_mock_is_tracked_fn)(const void *);
 typedef char *(*tempnam_fn_t)(const char *, const char *);
 typedef char *(*get_current_dir_name_fn_t)(void);
+typedef void *(*sched_cpualloc_fn_t)(size_t);
 
 typedef enum run_mode {
     RUN_MODE_DIAGNOSTIC,
@@ -84,6 +85,15 @@ static get_current_dir_name_fn_t lookup_get_current_dir_name_optional(void)
 {
     get_current_dir_name_fn_t fn = NULL;
     void *symbol = dlsym(RTLD_DEFAULT, "get_current_dir_name");
+
+    memcpy(&fn, &symbol, sizeof(fn));
+    return fn;
+}
+
+static sched_cpualloc_fn_t lookup_sched_cpualloc_optional(void)
+{
+    sched_cpualloc_fn_t fn = NULL;
+    void *symbol = dlsym(RTLD_DEFAULT, "__sched_cpualloc");
 
     memcpy(&fn, &symbol, sizeof(fn));
     return fn;
@@ -164,7 +174,7 @@ static void validate_strict_negative(const case_result *result)
         return;
     }
 
-    if (strcmp(result->name, "open_memstream") == 0 || strcmp(result->name, "open_wmemstream") == 0) {
+    if (strcmp(result->name, "open_memstream") == 0 || strcmp(result->name, "open_wmemstream") == 0 || strcmp(result->name, "__sched_cpualloc") == 0) {
         return;
     }
 
@@ -723,6 +733,41 @@ static case_result run_vswscanf_mls_case(mock_api *api)
     return result;
 }
 
+static case_result run_sched_cpualloc_case(mock_api *api)
+{
+    ao_mock_stats before;
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    case_result result;
+    sched_cpualloc_fn_t sched_cpualloc_fn = lookup_sched_cpualloc_optional();
+    void *set;
+    uint64_t tracked;
+
+    if (!sched_cpualloc_fn) {
+        memset(&result, 0, sizeof(result));
+        result.name = "__sched_cpualloc";
+        return result;
+    }
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    set = sched_cpualloc_fn(130);
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(set != NULL, "__sched_cpualloc returned null");
+    tracked = api->is_tracked(set) ? 1u : 0u;
+
+    api->begin_capture();
+    free(set);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "__sched_cpualloc", &before, &after_alloc, &after_free, 1, tracked);
+    return result;
+}
+
 static case_result run_getcwd_buffer_case(mock_api *api)
 {
     ao_mock_stats before;
@@ -1007,7 +1052,7 @@ int main(int argc, char **argv)
     mock_api api;
     run_mode mode = RUN_MODE_DIAGNOSTIC;
     FILE *report;
-    case_result results[21];
+    case_result results[22];
     size_t i;
 
     check(argc == 4, "usage: phase1a_mock_only <mock_allocator_basename> <report_path> <diagnostic|strict_negative>");
@@ -1036,12 +1081,13 @@ int main(int argc, char **argv)
     results[12] = run_sscanf_mls_case(&api);
     results[13] = run_swscanf_ms_case(&api);
     results[14] = run_vswscanf_mls_case(&api);
-    results[15] = run_getcwd_buffer_case(&api);
-    results[16] = run_getcwd_alloc_case(&api);
-    results[17] = run_get_current_dir_name_case(&api);
-    results[18] = run_realpath_buffer_case(&api);
-    results[19] = run_realpath_alloc_case(&api);
-    results[20] = run_tempnam_case(&api);
+    results[15] = run_sched_cpualloc_case(&api);
+    results[16] = run_getcwd_buffer_case(&api);
+    results[17] = run_getcwd_alloc_case(&api);
+    results[18] = run_get_current_dir_name_case(&api);
+    results[19] = run_realpath_buffer_case(&api);
+    results[20] = run_realpath_alloc_case(&api);
+    results[21] = run_tempnam_case(&api);
 
     report = fopen(argv[2], "w");
     check(report != NULL, "failed to open diagnostic report file");

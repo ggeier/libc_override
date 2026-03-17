@@ -13,6 +13,7 @@ ALLOC_RETURN_OVERRIDE_1 {
         __isoc99_vswscanf;
         __isoc99_vwscanf;
         __isoc99_wscanf;
+        __sched_cpualloc;
         asprintf;
         fscanf;
         fwscanf;

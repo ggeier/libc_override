@@ -21,6 +21,7 @@ typedef void (*ao_mock_get_stats_fn)(ao_mock_stats *);
 typedef int (*ao_mock_is_tracked_fn)(const void *);
 typedef char *(*tempnam_fn_t)(const char *, const char *);
 typedef char *(*get_current_dir_name_fn_t)(void);
+typedef void *(*sched_cpualloc_fn_t)(size_t);
 
 typedef struct mock_api {
     ao_mock_reset_fn reset;
@@ -69,6 +70,15 @@ static get_current_dir_name_fn_t lookup_get_current_dir_name(void)
 {
     get_current_dir_name_fn_t fn = NULL;
     void *symbol = lookup_symbol("get_current_dir_name");
+
+    memcpy(&fn, &symbol, sizeof(fn));
+    return fn;
+}
+
+static sched_cpualloc_fn_t lookup_sched_cpualloc(void)
+{
+    sched_cpualloc_fn_t fn = NULL;
+    void *symbol = lookup_symbol("__sched_cpualloc");
 
     memcpy(&fn, &symbol, sizeof(fn));
     return fn;
@@ -619,6 +629,35 @@ static void test_vswscanf_mls(mock_api *api)
     check(after_free.live_blocks == before.live_blocks, "vswscanf %mls live block count mismatch after free");
 }
 
+static void test_sched_cpualloc(mock_api *api)
+{
+    const ao_mock_stats before = snapshot(api);
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    sched_cpualloc_fn_t sched_cpualloc_fn = lookup_sched_cpualloc();
+    void *set;
+
+    check(sched_cpualloc_fn != NULL, "failed to resolve __sched_cpualloc");
+
+    api->begin_capture();
+    set = sched_cpualloc_fn(130);
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(set != NULL, "__sched_cpualloc returned null");
+    check(api->is_tracked(set), "__sched_cpualloc result was not tracked by mock allocator");
+    check(alloc_call_count(&after_alloc) > alloc_call_count(&before), "__sched_cpualloc did not trigger any allocation calls");
+    check(after_alloc.live_blocks == before.live_blocks + 1, "__sched_cpualloc live block count mismatch after allocation");
+
+    api->begin_capture();
+    free(set);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_alloc.free_calls + 1, "__sched_cpualloc free was not recorded");
+    check(after_free.live_blocks == before.live_blocks, "__sched_cpualloc live block count mismatch after free");
+}
+
 static void test_getcwd_allocates_only_when_needed(mock_api *api)
 {
     char buffer[PATH_MAX];
@@ -889,6 +928,7 @@ int main(int argc, char **argv)
     test_sscanf_mls(&api);
     test_swscanf_ms(&api);
     test_vswscanf_mls(&api);
+    test_sched_cpualloc(&api);
     test_getcwd_allocates_only_when_needed(&api);
     test_get_current_dir_name(&api);
     test_realpath(&api);
