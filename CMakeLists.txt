@@ -78,6 +78,7 @@ add_library(alloc_return_override SHARED
     src/line_overrides.c
     src/memstream_overrides.c
     src/path_overrides.c
+    src/scanf_overrides.c
     src/stdio_overrides.c
     src/string_overrides.c
 )

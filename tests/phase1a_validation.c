@@ -225,6 +225,28 @@ static int call_vasprintf(char **out, const char *fmt, ...)
     return ret;
 }
 
+static int call_vsscanf_wrapper(const char *input, const char *fmt, ...)
+{
+    va_list ap;
+    int ret;
+
+    va_start(ap, fmt);
+    ret = vsscanf(input, fmt, ap);
+    va_end(ap);
+    return ret;
+}
+
+static int call_vswscanf_wrapper(const wchar_t *input, const wchar_t *fmt, ...)
+{
+    va_list ap;
+    int ret;
+
+    va_start(ap, fmt);
+    ret = vswscanf(input, fmt, ap);
+    va_end(ap);
+    return ret;
+}
+
 static void test_asprintf(mock_api *api)
 {
     const ao_mock_stats before = snapshot(api);
@@ -438,6 +460,163 @@ static void test_open_wmemstream(mock_api *api)
 
     check(after_free.free_calls == after_close.free_calls + 1, "open_wmemstream published buffer free was not recorded");
     check(after_free.live_blocks == before.live_blocks, "open_wmemstream live block count mismatch after free");
+}
+
+static void test_sscanf_ms(mock_api *api)
+{
+    const ao_mock_stats before = snapshot(api);
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    char *result = NULL;
+
+    api->begin_capture();
+    check(call_vsscanf_wrapper("hello", "%ms", &result) == 1, "sscanf %ms returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(result != NULL, "sscanf %ms returned null");
+    check(strcmp(result, "hello") == 0, "sscanf %ms content mismatch");
+    check(api->is_tracked(result), "sscanf %ms result was not tracked by mock allocator");
+    check(alloc_call_count(&after_alloc) > alloc_call_count(&before), "sscanf %ms did not trigger any allocation calls");
+    check(after_alloc.live_blocks >= before.live_blocks + 1, "sscanf %ms live block count mismatch after allocation");
+
+    api->begin_capture();
+    free(result);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_alloc.free_calls + 1, "sscanf %ms free was not recorded");
+    check(after_free.live_blocks == before.live_blocks, "sscanf %ms live block count mismatch after free");
+}
+
+static void test_sscanf_m_scanset(mock_api *api)
+{
+    const ao_mock_stats before = snapshot(api);
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    char *result = NULL;
+
+    api->begin_capture();
+    check(call_vsscanf_wrapper("abc123", "%m[a-z]", &result) == 1, "sscanf %m[] returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(result != NULL, "sscanf %m[] returned null");
+    check(strcmp(result, "abc") == 0, "sscanf %m[] content mismatch");
+    check(api->is_tracked(result), "sscanf %m[] result was not tracked by mock allocator");
+    check(after_alloc.live_blocks >= before.live_blocks + 1, "sscanf %m[] live block count mismatch after allocation");
+
+    api->begin_capture();
+    free(result);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_alloc.free_calls + 1, "sscanf %m[] free was not recorded");
+    check(after_free.live_blocks == before.live_blocks, "sscanf %m[] live block count mismatch after free");
+}
+
+static void test_vsscanf_mc(mock_api *api)
+{
+    const ao_mock_stats before = snapshot(api);
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    char *result = NULL;
+
+    api->begin_capture();
+    check(call_vsscanf_wrapper("XYZ", "%3mc", &result) == 1, "vsscanf %mc returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(result != NULL, "vsscanf %mc returned null");
+    check(memcmp(result, "XYZ", 3) == 0, "vsscanf %mc content mismatch");
+    check(api->is_tracked(result), "vsscanf %mc result was not tracked by mock allocator");
+    check(after_alloc.live_blocks >= before.live_blocks + 1, "vsscanf %mc live block count mismatch after allocation");
+
+    api->begin_capture();
+    free(result);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_alloc.free_calls + 1, "vsscanf %mc free was not recorded");
+    check(after_free.live_blocks == before.live_blocks, "vsscanf %mc live block count mismatch after free");
+}
+
+static void test_sscanf_mls(mock_api *api)
+{
+    const ao_mock_stats before = snapshot(api);
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    wchar_t *result = NULL;
+
+    api->begin_capture();
+    check(call_vsscanf_wrapper("wide", "%mls", &result) == 1, "sscanf %mls returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(result != NULL, "sscanf %mls returned null");
+    check(wcscmp(result, L"wide") == 0, "sscanf %mls content mismatch");
+    check(api->is_tracked(result), "sscanf %mls result was not tracked by mock allocator");
+    check(after_alloc.live_blocks >= before.live_blocks + 1, "sscanf %mls live block count mismatch after allocation");
+
+    api->begin_capture();
+    free(result);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_alloc.free_calls + 1, "sscanf %mls free was not recorded");
+    check(after_free.live_blocks == before.live_blocks, "sscanf %mls live block count mismatch after free");
+}
+
+static void test_swscanf_ms(mock_api *api)
+{
+    const ao_mock_stats before = snapshot(api);
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    char *result = NULL;
+
+    api->begin_capture();
+    check(call_vswscanf_wrapper(L"hello", L"%ms", &result) == 1, "swscanf %ms returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(result != NULL, "swscanf %ms returned null");
+    check(strcmp(result, "hello") == 0, "swscanf %ms content mismatch");
+    check(api->is_tracked(result), "swscanf %ms result was not tracked by mock allocator");
+    check(after_alloc.live_blocks >= before.live_blocks + 1, "swscanf %ms live block count mismatch after allocation");
+
+    api->begin_capture();
+    free(result);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_alloc.free_calls + 1, "swscanf %ms free was not recorded");
+    check(after_free.live_blocks == before.live_blocks, "swscanf %ms live block count mismatch after free");
+}
+
+static void test_vswscanf_mls(mock_api *api)
+{
+    const ao_mock_stats before = snapshot(api);
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    wchar_t *result = NULL;
+
+    api->begin_capture();
+    check(call_vswscanf_wrapper(L"hybrid", L"%mls", &result) == 1, "vswscanf %mls returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(result != NULL, "vswscanf %mls returned null");
+    check(wcscmp(result, L"hybrid") == 0, "vswscanf %mls content mismatch");
+    check(api->is_tracked(result), "vswscanf %mls result was not tracked by mock allocator");
+    check(after_alloc.live_blocks >= before.live_blocks + 1, "vswscanf %mls live block count mismatch after allocation");
+
+    api->begin_capture();
+    free(result);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    check(after_free.free_calls == after_alloc.free_calls + 1, "vswscanf %mls free was not recorded");
+    check(after_free.live_blocks == before.live_blocks, "vswscanf %mls live block count mismatch after free");
 }
 
 static void test_getcwd_allocates_only_when_needed(mock_api *api)
@@ -704,6 +883,12 @@ int main(int argc, char **argv)
     test_getline(&api);
     test_open_memstream(&api);
     test_open_wmemstream(&api);
+    test_sscanf_ms(&api);
+    test_sscanf_m_scanset(&api);
+    test_vsscanf_mc(&api);
+    test_sscanf_mls(&api);
+    test_swscanf_ms(&api);
+    test_vswscanf_mls(&api);
     test_getcwd_allocates_only_when_needed(&api);
     test_get_current_dir_name(&api);
     test_realpath(&api);

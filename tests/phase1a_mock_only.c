@@ -211,6 +211,28 @@ static int call_vasprintf(char **out, const char *fmt, ...)
     return ret;
 }
 
+static int call_vsscanf_wrapper(const char *input, const char *fmt, ...)
+{
+    va_list ap;
+    int ret;
+
+    va_start(ap, fmt);
+    ret = vsscanf(input, fmt, ap);
+    va_end(ap);
+    return ret;
+}
+
+static int call_vswscanf_wrapper(const wchar_t *input, const wchar_t *fmt, ...)
+{
+    va_list ap;
+    int ret;
+
+    va_start(ap, fmt);
+    ret = vswscanf(input, fmt, ap);
+    va_end(ap);
+    return ret;
+}
+
 static int dirent_name_cmp(const struct dirent **lhs, const struct dirent **rhs)
 {
     return strcmp((*lhs)->d_name, (*rhs)->d_name);
@@ -527,6 +549,180 @@ static case_result run_open_wmemstream_case(mock_api *api)
     return result;
 }
 
+static case_result run_sscanf_ms_case(mock_api *api)
+{
+    ao_mock_stats before;
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    case_result result;
+    char *value = NULL;
+    uint64_t tracked;
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    check(call_vsscanf_wrapper("hello", "%ms", &value) == 1, "sscanf %ms returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(value != NULL, "sscanf %ms returned null");
+    check(strcmp(value, "hello") == 0, "sscanf %ms content mismatch");
+    tracked = api->is_tracked(value) ? 1u : 0u;
+
+    api->begin_capture();
+    free(value);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "sscanf_ms", &before, &after_alloc, &after_free, 1, tracked);
+    return result;
+}
+
+static case_result run_sscanf_m_scanset_case(mock_api *api)
+{
+    ao_mock_stats before;
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    case_result result;
+    char *value = NULL;
+    uint64_t tracked;
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    check(call_vsscanf_wrapper("abc123", "%m[a-z]", &value) == 1, "sscanf %m[] returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(value != NULL, "sscanf %m[] returned null");
+    check(strcmp(value, "abc") == 0, "sscanf %m[] content mismatch");
+    tracked = api->is_tracked(value) ? 1u : 0u;
+
+    api->begin_capture();
+    free(value);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "sscanf_m_scanset", &before, &after_alloc, &after_free, 1, tracked);
+    return result;
+}
+
+static case_result run_vsscanf_mc_case(mock_api *api)
+{
+    ao_mock_stats before;
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    case_result result;
+    char *value = NULL;
+    uint64_t tracked;
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    check(call_vsscanf_wrapper("XYZ", "%3mc", &value) == 1, "vsscanf %mc returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(value != NULL, "vsscanf %mc returned null");
+    check(memcmp(value, "XYZ", 3) == 0, "vsscanf %mc content mismatch");
+    tracked = api->is_tracked(value) ? 1u : 0u;
+
+    api->begin_capture();
+    free(value);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "vsscanf_mc", &before, &after_alloc, &after_free, 1, tracked);
+    return result;
+}
+
+static case_result run_sscanf_mls_case(mock_api *api)
+{
+    ao_mock_stats before;
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    case_result result;
+    wchar_t *value = NULL;
+    uint64_t tracked;
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    check(call_vsscanf_wrapper("wide", "%mls", &value) == 1, "sscanf %mls returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(value != NULL, "sscanf %mls returned null");
+    check(wcscmp(value, L"wide") == 0, "sscanf %mls content mismatch");
+    tracked = api->is_tracked(value) ? 1u : 0u;
+
+    api->begin_capture();
+    free(value);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "sscanf_mls", &before, &after_alloc, &after_free, 1, tracked);
+    return result;
+}
+
+static case_result run_swscanf_ms_case(mock_api *api)
+{
+    ao_mock_stats before;
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    case_result result;
+    char *value = NULL;
+    uint64_t tracked;
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    check(call_vswscanf_wrapper(L"hello", L"%ms", &value) == 1, "swscanf %ms returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(value != NULL, "swscanf %ms returned null");
+    check(strcmp(value, "hello") == 0, "swscanf %ms content mismatch");
+    tracked = api->is_tracked(value) ? 1u : 0u;
+
+    api->begin_capture();
+    free(value);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "swscanf_ms", &before, &after_alloc, &after_free, 1, tracked);
+    return result;
+}
+
+static case_result run_vswscanf_mls_case(mock_api *api)
+{
+    ao_mock_stats before;
+    ao_mock_stats after_alloc;
+    ao_mock_stats after_free;
+    case_result result;
+    wchar_t *value = NULL;
+    uint64_t tracked;
+
+    api->reset();
+    before = snapshot(api);
+    api->begin_capture();
+    check(call_vswscanf_wrapper(L"hybrid", L"%mls", &value) == 1, "vswscanf %mls returned unexpected match count");
+    api->end_capture();
+    after_alloc = snapshot(api);
+
+    check(value != NULL, "vswscanf %mls returned null");
+    check(wcscmp(value, L"hybrid") == 0, "vswscanf %mls content mismatch");
+    tracked = api->is_tracked(value) ? 1u : 0u;
+
+    api->begin_capture();
+    free(value);
+    api->end_capture();
+    after_free = snapshot(api);
+
+    fill_result(&result, "vswscanf_mls", &before, &after_alloc, &after_free, 1, tracked);
+    return result;
+}
+
 static case_result run_getcwd_buffer_case(mock_api *api)
 {
     ao_mock_stats before;
@@ -811,7 +1007,7 @@ int main(int argc, char **argv)
     mock_api api;
     run_mode mode = RUN_MODE_DIAGNOSTIC;
     FILE *report;
-    case_result results[15];
+    case_result results[21];
     size_t i;
 
     check(argc == 4, "usage: phase1a_mock_only <mock_allocator_basename> <report_path> <diagnostic|strict_negative>");
@@ -834,12 +1030,18 @@ int main(int argc, char **argv)
     results[6] = run_getline_case(&api);
     results[7] = run_open_memstream_case(&api);
     results[8] = run_open_wmemstream_case(&api);
-    results[9] = run_getcwd_buffer_case(&api);
-    results[10] = run_getcwd_alloc_case(&api);
-    results[11] = run_get_current_dir_name_case(&api);
-    results[12] = run_realpath_buffer_case(&api);
-    results[13] = run_realpath_alloc_case(&api);
-    results[14] = run_tempnam_case(&api);
+    results[9] = run_sscanf_ms_case(&api);
+    results[10] = run_sscanf_m_scanset_case(&api);
+    results[11] = run_vsscanf_mc_case(&api);
+    results[12] = run_sscanf_mls_case(&api);
+    results[13] = run_swscanf_ms_case(&api);
+    results[14] = run_vswscanf_mls_case(&api);
+    results[15] = run_getcwd_buffer_case(&api);
+    results[16] = run_getcwd_alloc_case(&api);
+    results[17] = run_get_current_dir_name_case(&api);
+    results[18] = run_realpath_buffer_case(&api);
+    results[19] = run_realpath_alloc_case(&api);
+    results[20] = run_tempnam_case(&api);
 
     report = fopen(argv[2], "w");
     check(report != NULL, "failed to open diagnostic report file");

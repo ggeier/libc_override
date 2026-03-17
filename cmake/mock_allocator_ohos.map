@@ -9,6 +9,9 @@ MOCK_ALLOCATOR_OHOS_1 {
         ao_mock_end_capture;
         ao_mock_get_stats;
         ao_mock_is_tracked_allocation;
+        ao_alloc_bridge_libc_free;
+        ao_alloc_bridge_libc_realloc;
+        ao_alloc_bridge_owns;
     local:
         *;
 };

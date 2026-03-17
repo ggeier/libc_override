@@ -1,7 +1,21 @@
 ALLOC_RETURN_OVERRIDE_OHOS_1 {
     global:
         __getdelim;
+        __isoc99_fscanf;
+        __isoc99_fwscanf;
+        __isoc99_scanf;
+        __isoc99_sscanf;
+        __isoc99_swscanf;
+        __isoc99_vfscanf;
+        __isoc99_vfwscanf;
+        __isoc99_vscanf;
+        __isoc99_vsscanf;
+        __isoc99_vswscanf;
+        __isoc99_vwscanf;
+        __isoc99_wscanf;
         asprintf;
+        fscanf;
+        fwscanf;
         get_current_dir_name;
         getcwd;
         getdelim;
@@ -9,11 +23,21 @@ ALLOC_RETURN_OVERRIDE_OHOS_1 {
         open_memstream;
         open_wmemstream;
         realpath;
+        scanf;
         scandir;
+        sscanf;
         strdup;
         strndup;
+        swscanf;
         tempnam;
+        vfscanf;
+        vfwscanf;
+        vscanf;
+        vsscanf;
+        vswscanf;
         vasprintf;
+        vwscanf;
+        wscanf;
         wcsdup;
     local:
         *;

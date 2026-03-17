@@ -54,6 +54,10 @@ static int call_vasprintf(char **out, const char *fmt, ...)
 typedef char *(*tempnam_fn_t)(const char *, const char *);
 typedef char *(*get_current_dir_name_fn_t)(void);
 typedef ssize_t (*getdelim_fn_t)(char **restrict, size_t *restrict, int, FILE *restrict);
+typedef int (*sscanf_fn_t)(const char *restrict, const char *restrict, ...);
+typedef int (*swscanf_fn_t)(const wchar_t *restrict, const wchar_t *restrict, ...);
+typedef int (*vsscanf_fn_t)(const char *restrict, const char *restrict, va_list);
+typedef int (*vswscanf_fn_t)(const wchar_t *restrict, const wchar_t *restrict, va_list);
 
 static tempnam_fn_t lookup_tempnam(void)
 {
@@ -92,6 +96,28 @@ static FILE *open_input_stream(const char *contents)
     check(fflush(file) == 0, "fflush failed");
     rewind(file);
     return file;
+}
+
+static int call_named_vsscanf(vsscanf_fn_t fn, const char *input, const char *format, ...)
+{
+    va_list ap;
+    int ret;
+
+    va_start(ap, format);
+    ret = fn(input, format, ap);
+    va_end(ap);
+    return ret;
+}
+
+static int call_named_vswscanf(vswscanf_fn_t fn, const wchar_t *input, const wchar_t *format, ...)
+{
+    va_list ap;
+    int ret;
+
+    va_start(ap, format);
+    ret = fn(input, format, ap);
+    va_end(ap);
+    return ret;
 }
 
 static void check_preload(const char *library_name)
@@ -146,6 +172,54 @@ static void check_preload(const char *library_name)
     check(dladdr(sym, &info) != 0, "dladdr(open_wmemstream) failed");
     check(info.dli_fname != NULL, "dladdr for open_wmemstream returned null path");
     check(strstr(info.dli_fname, library_name) != NULL, "open_wmemstream did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "sscanf");
+    check(sym != NULL, "dlsym(sscanf) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(sscanf) failed");
+    check(info.dli_fname != NULL, "dladdr for sscanf returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "sscanf did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "vsscanf");
+    check(sym != NULL, "dlsym(vsscanf) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(vsscanf) failed");
+    check(info.dli_fname != NULL, "dladdr for vsscanf returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "vsscanf did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "swscanf");
+    check(sym != NULL, "dlsym(swscanf) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(swscanf) failed");
+    check(info.dli_fname != NULL, "dladdr for swscanf returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "swscanf did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "vswscanf");
+    check(sym != NULL, "dlsym(vswscanf) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(vswscanf) failed");
+    check(info.dli_fname != NULL, "dladdr for vswscanf returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "vswscanf did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "__isoc99_sscanf");
+    check(sym != NULL, "dlsym(__isoc99_sscanf) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(__isoc99_sscanf) failed");
+    check(info.dli_fname != NULL, "dladdr for __isoc99_sscanf returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "__isoc99_sscanf did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "__isoc99_vsscanf");
+    check(sym != NULL, "dlsym(__isoc99_vsscanf) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(__isoc99_vsscanf) failed");
+    check(info.dli_fname != NULL, "dladdr for __isoc99_vsscanf returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "__isoc99_vsscanf did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "__isoc99_swscanf");
+    check(sym != NULL, "dlsym(__isoc99_swscanf) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(__isoc99_swscanf) failed");
+    check(info.dli_fname != NULL, "dladdr for __isoc99_swscanf returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "__isoc99_swscanf did not resolve to preload library");
+
+    sym = dlsym(RTLD_DEFAULT, "__isoc99_vswscanf");
+    check(sym != NULL, "dlsym(__isoc99_vswscanf) failed");
+    check(dladdr(sym, &info) != 0, "dladdr(__isoc99_vswscanf) failed");
+    check(info.dli_fname != NULL, "dladdr for __isoc99_vswscanf returned null path");
+    check(strstr(info.dli_fname, library_name) != NULL, "__isoc99_vswscanf did not resolve to preload library");
 }
 
 static void test_strdup_family(void)
@@ -307,6 +381,48 @@ static void test_open_wmemstream(void)
     free(buffer);
 }
 
+static void test_scanf_m_family(void)
+{
+    char *string_result = NULL;
+    char *set_result = NULL;
+    char *char_result = NULL;
+    char *wide_input_string = NULL;
+    wchar_t *wide_result = NULL;
+    wchar_t *wide_vresult = NULL;
+
+    check(call_named_vsscanf(vsscanf, "hello", "%ms", &string_result) == 1, "sscanf %ms failed");
+    check(string_result != NULL && strcmp(string_result, "hello") == 0, "sscanf %ms content mismatch");
+    free(string_result);
+
+    check(call_named_vsscanf(vsscanf, "abc123", "%m[a-z]", &set_result) == 1, "vsscanf %m[] failed");
+    check(set_result != NULL && strcmp(set_result, "abc") == 0, "vsscanf %m[] content mismatch");
+    free(set_result);
+
+    check(call_named_vsscanf(vsscanf, "XYZ", "%3mc", &char_result) == 1, "vsscanf %mc failed");
+    check(char_result != NULL && memcmp(char_result, "XYZ", 3) == 0, "vsscanf %mc content mismatch");
+    free(char_result);
+
+    check(call_named_vsscanf(vsscanf, "wide", "%mls", &wide_result) == 1, "vsscanf %mls failed");
+    check(wide_result != NULL && wcscmp(wide_result, L"wide") == 0, "vsscanf %mls content mismatch");
+    free(wide_result);
+
+    check(call_named_vswscanf(vswscanf, L"hello", L"%ms", &wide_input_string) == 1, "swscanf %ms failed");
+    check(wide_input_string != NULL && strcmp(wide_input_string, "hello") == 0, "swscanf %ms content mismatch");
+    free(wide_input_string);
+
+    check(call_named_vswscanf(vswscanf, L"wide", L"%mls", &wide_result) == 1, "vswscanf %mls failed");
+    check(wide_result != NULL && wcscmp(wide_result, L"wide") == 0, "vswscanf %mls content mismatch");
+    free(wide_result);
+
+    check(call_named_vswscanf(vswscanf, L"ascii", L"%ms", &wide_input_string) == 1, "vswscanf %ms failed");
+    check(wide_input_string != NULL && strcmp(wide_input_string, "ascii") == 0, "vswscanf %ms content mismatch");
+    free(wide_input_string);
+
+    check(call_named_vswscanf(vswscanf, L"hybrid", L"%mls", &wide_vresult) == 1, "vswscanf %mls second case failed");
+    check(wide_vresult != NULL && wcscmp(wide_vresult, L"hybrid") == 0, "vswscanf %mls second content mismatch");
+    free(wide_vresult);
+}
+
 static void test_path_family(void)
 {
     char cwd_buf[PATH_MAX];
@@ -401,6 +517,7 @@ int main(int argc, char **argv)
     test_line_reader_family();
     test_open_memstream();
     test_open_wmemstream();
+    test_scanf_m_family();
     test_path_family();
     test_scandir_family();
 

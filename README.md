@@ -2,9 +2,12 @@
 
 This project builds a preload library that overrides higher-level libc functions which return caller-owned heap memory, plus a mock allocator used to verify that those allocations flow through the expected allocator path.
 
-Current phase 1A coverage includes:
+Current coverage includes:
 - `strdup`, `strndup`, `wcsdup`
 - `asprintf`, `vasprintf`
+- `getdelim`, `__getdelim`, `getline`
+- `open_memstream`, `open_wmemstream`
+- `scanf` `%m` allocation paths across narrow and wide entry points, including `__isoc99_*` aliases
 - `getcwd(NULL, 0)`, `get_current_dir_name`, `realpath(path, NULL)`, `tempnam`
 - `scandir` and, on libcs that expose it separately, `scandir64`
 
@@ -19,6 +22,7 @@ The current tests validate preload behavior on a Linux PC and can also cross-bui
 - `CMakeLists.txt`: build and test entry point
 - `src/`: preload libraries
 - `tests/`: phase 1A test executables
+- `scanf_percent_m_hybrid.md`: scanf `%m` hybrid design notes and limitations
 - `cmake/run_ohos_test.cmake`: host-side launcher for OHOS device tests
 - `ohos-sdk/`: supplied OHOS SDK and toolchain
 - `third_party_musl/`: musl source tree used for implementation reference
@@ -37,6 +41,14 @@ LD_PRELOAD="liballoc_return_override.so:libmock_allocator.so"
 ```
 
 That gives symbol precedence to the higher-level override library while routing its internal allocator calls into the mock allocator.
+
+## scanf `%m` Notes
+
+- The scanf `%m` override is hybrid: it lets libc perform the actual scan and then rehomes successful `%m` results into the preloaded allocator when possible.
+- The allocator bridge ABI used by that path is declared in `include/allocator_bridge.h`.
+- Embedded NUL data in string-like `%m` results truncates during rehome because the post-scan pointer no longer carries the original logical length.
+- Wide-input `%mc` cannot currently be rehomed safely and may remain libc-owned.
+- The detailed behavior, limitations, and `MEMORY LEAK` fallback cases are documented in `scanf_percent_m_hybrid.md`.
 
 ## Build And Test On A Linux PC
 
@@ -192,4 +204,4 @@ This is useful for debugging `hdc`, paths, preload order, and pulled report loca
 
 ## Current Scope
 
-This README covers the current phase 1A implementation and tests. The same host/device test structure is intended to be reused for later phases such as `getdelim`, `getline`, and the scanf `%m` allocation paths.
+This README covers the current host/device test structure for the implemented override set. The same pattern can be reused for later additions such as `__sched_cpualloc`.

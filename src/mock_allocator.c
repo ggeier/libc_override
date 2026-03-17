@@ -1,5 +1,6 @@
 #define _GNU_SOURCE 1
 
+#include "../include/allocator_bridge.h"
 #include "../include/mock_allocator_test_api.h"
 
 #include <dlfcn.h>
@@ -471,6 +472,27 @@ int ao_mock_is_tracked_allocation(const void *ptr)
     }
 
     return ao_registry_contains(ptr);
+}
+
+int ao_alloc_bridge_owns(const void *ptr)
+{
+    return ao_mock_is_tracked_allocation(ptr);
+}
+
+void ao_alloc_bridge_libc_free(void *ptr)
+{
+    if (!ptr) {
+        return;
+    }
+
+    ao_ensure_real_functions();
+    g_real_free(ptr);
+}
+
+void *ao_alloc_bridge_libc_realloc(void *ptr, size_t size)
+{
+    ao_ensure_real_functions();
+    return g_real_realloc(ptr, size);
 }
 
 void *malloc(size_t size)
